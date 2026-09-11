@@ -77,28 +77,22 @@ class NotificationService {
   Future<void> scheduleAlarm(Alarm alarm) async {
     if (kIsWeb) return;
     if (!_initialized) await init();
-    final kolkata = tz.getLocation('Asia/Kolkata');
-    final tz.TZDateTime scheduledDate = tz.TZDateTime(
-      kolkata,
-      alarm.scheduledDateTime.year,
-      alarm.scheduledDateTime.month,
-      alarm.scheduledDateTime.day,
-      alarm.scheduledDateTime.hour,
-      alarm.scheduledDateTime.minute,
-    );
-    final now = tz.TZDateTime.now(kolkata);
-    if (scheduledDate.isBefore(now)) {
+    
+    // Ensure we use the device's exact local timezone, avoiding any offset issues.
+    final now = DateTime.now();
+    if (alarm.scheduledDateTime.isBefore(now)) {
       debugPrint('Alarm is in the past, not scheduling');
       return;
     }
+    final tz.TZDateTime scheduledDate = tz.TZDateTime.from(alarm.scheduledDateTime, tz.local);
+
     final androidDetails = AndroidNotificationDetails(
-      'alarm_channel_v4',
+      'alarm_channel_v5', // Changed channel to wipe bad sound configs
       'Alarm Notifications',
       channelDescription: 'Plays sound and shows notification for scheduled alarms',
       importance: Importance.max,
       priority: Priority.max,
       playSound: true,
-      sound: const UriAndroidNotificationSound('content://settings/system/alarm_alert'),
       enableVibration: true,
       vibrationPattern: Int64List.fromList([0, 1000, 500, 1000, 500, 1000]),
       fullScreenIntent: true,
@@ -141,10 +135,10 @@ class NotificationService {
       final preMins = await storage.getPreAlarmMins();
       if (preMins > 0) {
         final preAlarmDate = scheduledDate.subtract(Duration(minutes: preMins));
-        if (preAlarmDate.isAfter(now)) {
-          final preDetails = NotificationDetails(
+        if (preAlarmDate.isAfter(tz.TZDateTime.now(tz.local))) {
+          final preDetails = const NotificationDetails(
             android: AndroidNotificationDetails(
-              'pre_alarm_channel',
+              'pre_alarm_channel_v2',
               'Upcoming Alarms',
               channelDescription: 'Gentle notification before the actual alarm rings',
               importance: Importance.defaultImportance,
@@ -175,18 +169,22 @@ class NotificationService {
     if (kIsWeb) return;
     if (!_initialized) await init();
     final androidDetails = AndroidNotificationDetails(
-      'alarm_channel_v2',
+      'alarm_channel_v5', // MUST exactly match scheduleAlarm channel
       'Alarm Notifications',
       channelDescription: 'Test notification for alarm sound',
       importance: Importance.max,
       priority: Priority.max,
       playSound: true,
       enableVibration: true,
-      vibrationPattern: Int64List.fromList([0, 1000, 500, 1000]),
+      vibrationPattern: Int64List.fromList([0, 1000, 500, 1000, 500, 1000]),
       fullScreenIntent: true,
       category: AndroidNotificationCategory.alarm,
       audioAttributesUsage: AudioAttributesUsage.alarm,
+      additionalFlags: Int32List.fromList([4]), // FLAG_INSISTENT loops sound infinitely
       visibility: NotificationVisibility.public,
+      actions: <AndroidNotificationAction>[
+        const AndroidNotificationAction('stop_id', 'Stop Alarm', showsUserInterface: true),
+      ],
     );
     final notificationDetails = NotificationDetails(
       android: androidDetails,
@@ -197,15 +195,21 @@ class NotificationService {
       ),
     );
     await plugin.show(
-      0,
-      '⏰ Test Alarm',
-      'If you hear a sound, alarms are working!',
+      0, // ID 0 for test
+      '⏰ Test Alarm Ringing',
+      'This is exactly how your scheduled alarm will ring!',
       notificationDetails,
+      payload: 'test_payload', // Allows stopping it from the action button
     );
   }
 
   Future<void> cancelAlarm(String id) async {
     if (kIsWeb) return;
+    // Catch 'test_payload' to stop the test notification using ID 0
+    if (id == 'test_payload') {
+      await plugin.cancel(0);
+      return;
+    }
     await plugin.cancel(id.hashCode.abs());
   }
 }
