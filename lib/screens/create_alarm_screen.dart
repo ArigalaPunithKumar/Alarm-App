@@ -94,7 +94,7 @@ class _CreateAlarmScreenState extends State<CreateAlarmScreen> {
       return;
     }
 
-    final DateTime scheduledDateTime = DateTime(
+    DateTime scheduledDateTime = DateTime(
       _selectedDate.year,
       _selectedDate.month,
       _selectedDate.day,
@@ -102,16 +102,23 @@ class _CreateAlarmScreenState extends State<CreateAlarmScreen> {
       _selectedTime.minute,
     );
 
-    if (scheduledDateTime.isBefore(DateTime.now())) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Cannot schedule an alarm in the past')),
-      );
-      return;
+    final now = DateTime.now();
+    if (scheduledDateTime.isBefore(now)) {
+      // If they scheduled an alarm for earlier today (or this exact minute), roll it over to tomorrow!
+      if (_selectedDate.year == now.year &&
+          _selectedDate.month == now.month &&
+          _selectedDate.day == now.day) {
+        scheduledDateTime = scheduledDateTime.add(const Duration(days: 1));
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Cannot schedule an alarm in the past')),
+        );
+        return;
+      }
     }
 
     final String timeString = _selectedTime.format(context);
-    final String dateString =
-        DateFormat('dd MMM yyyy').format(_selectedDate);
+    final String dateString = DateFormat('dd MMM yyyy').format(scheduledDateTime);
 
     final alarm = Alarm(
       id: widget.existingAlarm?.id ?? const Uuid().v4(),
